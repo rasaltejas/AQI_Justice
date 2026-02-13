@@ -14,6 +14,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [city, setCity] = useState("Delhi");
   const [time, setTime] = useState("");
+  const [temperature, setTemperature] = useState(32);
   const [stats, setStats] = useState([
     { icon: <FiUsers />, label: "Users Protected", value: "1,247+", change: "+12%" },
     { icon: <FiAlertCircle />, label: "Complaints Filed", value: "428", change: "+23%" },
@@ -84,6 +85,8 @@ export default function Home() {
     const variation = Math.floor(Math.random() * 30) - 15;
     const finalAQI = Math.max(100, Math.min(400, baseAQI + variation));
     
+    const tempBase = hour >= 12 && hour <= 16 ? 36 : hour >= 20 || hour <= 6 ? 24 : 30;
+    setTemperature(tempBase + Math.floor(Math.random() * 5) - 2);
     setAqi(finalAQI);
     setLoading(false);
     
@@ -156,6 +159,7 @@ export default function Home() {
                     <FiNavigation className="text-blue-500" />
                     <span className="text-blue-600 font-semibold">📍 {city}</span>
                   </div>
+                  <div className="text-sm text-gray-600 mt-1">🌡️ {temperature}°C</div>
                 </div>
                 <button 
                   onClick={scrollToDemo}
@@ -316,7 +320,7 @@ export default function Home() {
           {/* Right Column - Actions */}
           <div className="space-y-8">
             <HealthImpact aqi={aqi} />
-            <ComplaintButton aqi={aqi} location={location} />
+            <ComplaintButton aqi={aqi} temperature={temperature} city={city} location={location} />
             
             {/* Protection Tips */}
             <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-3xl shadow-xl p-6 border border-green-100">
