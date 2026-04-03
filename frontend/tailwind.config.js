@@ -11,6 +11,20 @@ module.exports = {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
+      colors: {
+        primary: '#4F46E5',
+        secondary: '#F43F5E',
+        accent: '#10B981',
+      },
+      animation: {
+        fadeIn: 'fadeIn 0.5s ease-in-out',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: 0 },
+          '100%': { opacity: 1 },
+        },
+      },
     },
   },
   plugins: [],

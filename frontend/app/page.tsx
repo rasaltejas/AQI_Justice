@@ -6,7 +6,10 @@ import LegalViolations from './components/LegalViolations';
 import HealthImpact from './components/HealthImpact';
 import ComplaintButton from './components/complaintButton';
 import MapView from './components/MapView';
+import SearchAQI from './components/SearchAQI';
+import ChatBot from './components/ChatBot';
 import { FiActivity, FiAlertCircle, FiMap, FiShield, FiUsers, FiTrendingUp, FiClock, FiNavigation } from 'react-icons/fi';
+import { number } from 'framer-motion';
 
 export default function Home() {
   const [location, setLocation] = useState({ lat: 28.6139, lon: 77.2090 });
@@ -14,6 +17,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [city, setCity] = useState("Delhi");
   const [time, setTime] = useState("");
+  const [temperature, setTemperature] = useState(32);
   const [stats, setStats] = useState([
     { icon: <FiUsers />, label: "Users Protected", value: "1,247+", change: "+12%" },
     { icon: <FiAlertCircle />, label: "Complaints Filed", value: "428", change: "+23%" },
@@ -22,6 +26,12 @@ export default function Home() {
   ]);
 
   const demoRef = useRef<HTMLDivElement>(null);
+
+  const undoLocation = () => {
+    setLocation({ lat: 28.6139, lon: 77.2090 });
+    setCity("Delhi");
+    simulateAQIUpdate();
+  };
 
   useEffect(() => {
     // Update time every second
@@ -39,31 +49,42 @@ export default function Home() {
         async (position) => {
           const { latitude, longitude } = position.coords;
           setLocation({ lat: latitude, lon: longitude });
-          
-          // Get city name
+
+          // Get real AQI data from WAQI API
           try {
             const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+              `https://api.waqi.info/feed/geo:${latitude};${longitude}/?token=e47ccb9f3bd66f152ea701ad4063d07748d60120`
             );
             const data = await response.json();
-            const cityName = data.address.city || data.address.town || data.address.state || "Your Location";
-            setCity(cityName);
-          } catch {
+            
+            if (data.status === 'ok' && data.data) {
+              const cityName = data.data.city?.name || 'Your Location';
+              const aqiValue = Math.round(data.data.aqi) || 100;
+              
+              setCity(cityName);
+              setAqi(aqiValue);
+              setLoading(false);
+            } else {
+              setCity("Your Location");
+              setAqi(100);
+              setLoading(false);
+            }
+          } catch (error) {
+            console.error('Error fetching AQI:', error);
             setCity("Your Location");
+            setAqi(100);
+            setLoading(false);
           }
-          
-          // For demo, we'll use mock AQI
-          simulateAQIUpdate();
         },
-        () => {
-          // Default to Delhi for demo
+        (error) => {
+          console.log('Location denied, using default');
+          setAqi(287);
           setCity("Delhi");
-          simulateAQIUpdate();
+          setLoading(false);
         }
       );
     } else {
-      setCity("Delhi");
-      simulateAQIUpdate();
+      setLoading(false);
     }
   };
 
@@ -84,6 +105,8 @@ export default function Home() {
     const variation = Math.floor(Math.random() * 30) - 15;
     const finalAQI = Math.max(100, Math.min(400, baseAQI + variation));
     
+    const tempBase = hour >= 12 && hour <= 16 ? 36 : hour >= 20 || hour <= 6 ? 24 : 30;
+    setTemperature(tempBase + Math.floor(Math.random() * 5) - 2);
     setAqi(finalAQI);
     setLoading(false);
     
@@ -98,6 +121,45 @@ export default function Home() {
 
   const scrollToDemo = () => {
     demoRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const getHealthImpact = (): string => {
+    const cigaretteEquivalent = Math.round(aqi / 100 * 10) / 10;
+    
+    let impact = "";
+    if (aqi <= 50) {
+      impact = "Air quality is satisfactory. No health impacts expected. You can engage in all outdoor activities.";
+    } else if (aqi <= 100) {
+      impact = `Air quality is acceptable. For sensitive individuals, prolonged outdoor exposure may cause mild respiratory irritation. Equivalent to ${cigaretteEquivalent} cigarettes per day.`;
+    } else if (aqi <= 150) {
+      impact = `Air quality is unhealthy for sensitive groups. Members of sensitive groups may experience respiratory symptoms. Children, elderly, and people with respiratory/heart diseases should limit outdoor exertion. Equivalent to ${cigaretteEquivalent} cigarettes per day.`;
+    } else if (aqi <= 200) {
+      impact = `Air quality is unhealthy. The general public may experience respiratory symptoms. Sensitive groups should avoid outdoor activities. Extended outdoor exposure is not recommended for anyone. Equivalent to ${cigaretteEquivalent} cigarettes per day.`;
+    } else if (aqi <= 300) {
+      impact = `Air quality is VERY UNHEALTHY. Everyone may experience serious health effects. Outdoor activities should be avoided completely. Indoors, most people will experience symptoms within hours of exposure. Equivalent to ${cigaretteEquivalent} cigarettes per day. LEGAL VIOLATION - This violates National Green Tribunal standards.`;
+    } else {
+      impact = `Air quality is HAZARDOUS. Serious health effects expected for everyone. Emergency conditions. All outdoor activities must be ceased immediately. Even indoors, people may experience health impacts. People should stay inside and keep activity levels low. Equivalent to ${cigaretteEquivalent} cigarettes per day. SEVERE LEGAL VIOLATION - Exceeds all air quality standards.`;
+    }
+    
+    return impact;
+  };
+
+  const getPrecautions = (): string => {
+    let precautions = "";
+    
+    if (aqi <= 100) {
+      precautions = "1. No special precautions needed\n2. Continue normal outdoor activities\n3. Monitor air quality updates";
+    } else if (aqi <= 150) {
+      precautions = "1. Sensitive groups should limit outdoor activities\n2. Reduce prolonged outdoor exertion\n3. Monitor air quality regularly\n4. Have inhalers/medications accessible\n5. Keep windows closed when possible\n6. Use air purifiers if available";
+    } else if (aqi <= 200) {
+      precautions = "1. Avoid outdoor activities entirely\n2. Keep windows and doors closed\n3. Use HEPA air filters in your home\n4. Wear N95 masks if you must go outside\n5. Monitor closely for health symptoms\n6. Stay hydrated and rest indoors\n7. Keep medications handy at all times";
+    } else if (aqi <= 300) {
+      precautions = "1. DO NOT go outdoors unless absolutely necessary\n2. If you must go out, wear N95 mask (not cloth masks)\n3. Keep all windows and doors tightly sealed\n4. Run air purifiers and air conditioning (recirculation mode)\n5. Limit physical exertion to minimum\n6. Children, elderly, and sick should remain indoors\n7. Avoid strenuous exercise\n8. Seek medical attention if experiencing symptoms\n9. Have emergency contact numbers ready";
+    } else {
+      precautions = "⚠️ EMERGENCY LEVEL - SEVERE AIR POLLUTION\n1. STAY INDOORS - Do not go outside unless life-threatening emergency\n2. Seal all windows and doors\n3. Use N95 masks if evacuation is necessary\n4. Run air purifiers continuously\n5. Children, elderly, pregnant women, and anyone with health conditions MUST remain indoors\n6. All outdoor activities CANCELLED\n7. Schools and offices may close\n8. Emergency services on alert\n9. Contact authorities immediately\n10. Have medical support on standby";
+    }
+    
+    return precautions;
   };
 
   if (loading) {
@@ -154,9 +216,16 @@ export default function Home() {
                   </div>
                   <div className="flex items-center space-x-2 mt-1">
                     <FiNavigation className="text-blue-500" />
-                    <span className="text-blue-600 font-semibold">📍 {city}</span>
+                    <span className="text-blue-600 font-semibold">📍 {location.lat.toFixed(4)}°, {location.lon.toFixed(4)}° ({city})</span>
                   </div>
+                  <div className="text-sm text-gray-600 mt-1">🌡️ {temperature}°C</div>
                 </div>
+                <button 
+                  onClick={() => window.location.href = '/trackComplaint'}
+                  className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                >
+                  Track Complaint
+                </button>
                 <button 
                   onClick={scrollToDemo}
                   className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105"
@@ -235,9 +304,9 @@ export default function Home() {
           <p className="text-gray-600 text-lg">Real-time monitoring with legal compliance checks</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Main Dashboard */}
-          <div className="lg:col-span-2 space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Main Dashboard */}
+          <div className="lg:col-span-3 space-y-8">
             {/* AQI Meter Card */}
             <div className="bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-3xl shadow-2xl p-8 text-white transform hover:scale-[1.01] transition-all duration-300">
               <div className="flex flex-col md:flex-row justify-between items-start mb-8">
@@ -295,28 +364,45 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Map & Legal Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-white rounded-3xl shadow-2xl p-6 transform hover:scale-[1.01] transition-all">
-                <div className="flex items-center mb-6">
-                  <div className="p-3 rounded-xl bg-blue-100 text-blue-600 mr-3">
-                    <FiMap className="text-xl" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Pollution Source Map</h3>
+            {/* Full-Width Map Section */}
+            <div className="col-span-full lg:col-span-3 bg-white rounded-3xl shadow-2xl p-6 transform hover:scale-[1.01] transition-all">
+              <div className="flex items-center mb-6">
+                <div className="p-3 rounded-xl bg-blue-100 text-blue-600 mr-3">
+                  <FiMap className="text-xl" />
                 </div>
+                <h3 className="text-2xl font-bold text-gray-900">🗺️ Pollution Source Map - Live Monitoring</h3>
+              </div>
+              <div className="rounded-lg overflow-hidden shadow-lg">
                 <MapView location={location} aqi={aqi} />
               </div>
-              
-              <div className="bg-white rounded-3xl shadow-2xl p-6 transform hover:scale-[1.01] transition-all">
-                <LegalViolations aqi={aqi} location={location} />
-              </div>
+            </div>
+            
+            {/* Legal Violations Section */}
+            <div className="col-span-full lg:col-span-3 bg-white rounded-3xl shadow-2xl p-6 transform hover:scale-[1.01] transition-all">
+              <LegalViolations aqi={aqi} location={location} />
+            </div>
+            
+            {/* Health Impact Section */}
+            <div className="col-span-full lg:col-span-3">
+              <HealthImpact aqi={aqi} />
             </div>
           </div>
 
-          {/* Right Column - Actions */}
+          {/* Right Column - Actions & Tips */}
           <div className="space-y-8">
+     
+           <ComplaintButton
+              aqi={aqi} 
+              location={location} 
+              temperature={temperature}
+              city={city}
+              healthImpact={getHealthImpact()}
+              precautions={getPrecautions()}
+            />
+
             <HealthImpact aqi={aqi} />
-            <ComplaintButton aqi={aqi} location={location} />
+            <ComplaintButton aqi={aqi} temperature={temperature} city={city} location={location} />
+
             
             {/* Protection Tips */}
             <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-3xl shadow-xl p-6 border border-green-100">
@@ -418,11 +504,15 @@ export default function Home() {
           </div>
           
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-500">
-            <p>© 2026 Air Justice. Built with ❤️ for hackathon. All rights reserved.</p>
+            <p>© 2026 Air Justice. Built with ❤️ for College project. All rights reserved.</p>
+            <p>Creator TEJAS RASAL , SWAYAM SHANANE , YASH SHINDE</p>
             <p className="text-sm mt-2">This is a demo project for educational purposes.</p>
           </div>
         </div>
       </footer>
+
+      {/* ChatBot Widget */}
+      <ChatBot lat={location.lat} lon={location.lon} />
     </main>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { FiSearch } from 'react-icons/fi';
 
 // Dynamically import Leaflet to avoid SSR issues
 const MapContainer = dynamic(
@@ -20,371 +21,467 @@ const Popup = dynamic(
   () => import('react-leaflet').then((mod) => mod.Popup),
   { ssr: false }
 );
-const Circle = dynamic(
-  () => import('react-leaflet').then((mod) => mod.Circle),
-  { ssr: false }
-);
+
+import { fetchAQIData } from '../../utils/api';
 
 interface MapViewProps {
   location: { lat: number; lon: number };
   aqi: number;
 }
 
+interface CityAQI {
+  city: string;
+  lat: number;
+  lon: number;
+  aqi: number;
+}
+
+// Global cities with known AQI data for demo purposes
+const DEMO_CITIES: CityAQI[] = [
+  { city: 'Delhi', lat: 28.6139, lon: 77.209, aqi: 287 },
+  { city: 'Mumbai', lat: 19.0760, lon: 72.8777, aqi: 156 },
+  { city: 'Bangalore', lat: 12.9716, lon: 77.5946, aqi: 98 },
+  { city: 'Kolkata', lat: 22.5726, lon: 88.3639, aqi: 234 },
+  { city: 'Chennai', lat: 13.0827, lon: 80.2707, aqi: 145 },
+  { city: 'Hyderabad', lat: 17.3850, lon: 78.4867, aqi: 176 },
+  { city: 'Beijing', lat: 39.9042, lon: 116.4074, aqi: 198 },
+  { city: 'Shanghai', lat: 31.2304, lon: 121.4737, aqi: 124 },
+  { city: 'Tokyo', lat: 35.6762, lon: 139.6503, aqi: 67 },
+  { city: 'London', lat: 51.5074, lon: -0.1278, aqi: 45 },
+  { city: 'New York', lat: 40.7128, lon: -74.0060, aqi: 89 },
+  { city: 'Los Angeles', lat: 34.0522, lon: -118.2437, aqi: 134 },
+  { city: 'Dubai', lat: 25.2048, lon: 55.2708, aqi: 167 },
+  { city: 'Singapore', lat: 1.3521, lon: 103.8198, aqi: 78 },
+  { city: 'Bangkok', lat: 13.7563, lon: 100.5018, aqi: 203 },
+];
+
 export default function MapView({ location, aqi }: MapViewProps) {
   const [isClient, setIsClient] = useState(false);
-  const [pollutionSources, setPollutionSources] = useState<any[]>([]);
-  const [selectedSource, setSelectedSource] = useState<number | null>(null);
+  const [searchCity, setSearchCity] = useState('');
+  const [citiesAQI, setCitiesAQI] = useState<CityAQI[]>(DEMO_CITIES);
+  const [selectedCity, setSelectedCity] = useState<CityAQI | null>(null);
+  const [filteredCities, setFilteredCities] = useState<CityAQI[]>(DEMO_CITIES);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([20, 0]);
+  const [userLocation, setUserLocation] = useState<CityAQI | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [userIcon, setUserIcon] = useState<any>(null);
+  const [cityIcon, setCityIcon] = useState<any>(null);
+
+  // Function to find nearest city from GPS coordinates
+  const findNearestCity = (lat: number, lon: number): CityAQI | null => {
+    let nearest: CityAQI | null = null;
+    let minDistance = Infinity;
+
+    DEMO_CITIES.forEach((city) => {
+      const latDiff = Math.abs(city.lat - lat);
+      const lonDiff = Math.abs(city.lon - lon);
+      const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff);
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = city;
+      }
+    });
+
+    return nearest;
+  };
 
   useEffect(() => {
     setIsClient(true);
+    setCitiesAQI(DEMO_CITIES);
+    setFilteredCities(DEMO_CITIES);
     
-    // Generate realistic pollution sources
-    const sources = [];
-    const sourceTypes = [
-      { type: 'Industrial Area', icon: '🏭', color: 'red', impact: 'High' },
-      { type: 'Major Traffic Junction', icon: '🚗', color: 'orange', impact: 'High' },
-      { type: 'Construction Site', icon: '🏗️', color: 'yellow', impact: 'Medium' },
-      { type: 'Waste Burning', icon: '🔥', color: 'purple', impact: 'High' },
-      { type: 'Power Plant', icon: '⚡', color: 'red', impact: 'Very High' },
-      { type: 'Diesel Generator', icon: '🔋', color: 'orange', impact: 'Medium' },
-      { type: 'Crematorium', icon: '🕯️', color: 'gray', impact: 'Medium' },
-      { type: 'Market Area', icon: '🛍️', color: 'yellow', impact: 'Low' },
-    ];
+    // Create leaflet icons
+    const L = require('leaflet');
+    const newUserIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [30, 46],
+      iconAnchor: [15, 46],
+      popupAnchor: [1, -34],
+      shadowSize: [46, 46]
+    });
     
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * 2 * Math.PI;
-      const distance = 0.01 + Math.random() * 0.02;
-      const latOffset = Math.cos(angle) * distance;
-      const lonOffset = Math.sin(angle) * distance;
-      
-      const sourceType = sourceTypes[i % sourceTypes.length];
-      const intensity = Math.floor(Math.random() * 100) + 50;
-      
-      sources.push({
-        id: i,
-        lat: location.lat + latOffset,
-        lon: location.lon + lonOffset,
-        type: sourceType.type,
-        icon: sourceType.icon,
-        color: sourceType.color,
-        impact: sourceType.impact,
-        intensity: intensity,
-        contribution: Math.round((intensity / 800) * aqi),
-        details: `Estimated PM2.5: ${intensity} µg/m³`
-      });
+    const newCityIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+    
+    setUserIcon(newUserIcon);
+    setCityIcon(newCityIcon);
+    
+    // Get user's GPS location and fetch real AQI data
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          
+          try {
+            // Fetch REAL AQI data from WAQI API using coordinates
+            const response = await fetch(
+              `https://api.waqi.info/feed/geo:${latitude};${longitude}/?token=e47ccb9f3bd66f152ea701ad4063d07748d60120`
+            );
+            const data = await response.json();
+            
+            if (data.status === 'ok' && data.data) {
+              // Use actual AQI from API
+              const userCity: CityAQI = {
+                city: data.data.city?.name || 'Your Location',
+                lat: latitude,
+                lon: longitude,
+                aqi: Math.round(data.data.aqi) || 100
+              };
+              
+              setUserLocation(userCity);
+              setSelectedCity(userCity);
+              setMapCenter([latitude, longitude]);
+            } else {
+              // Fallback to nearest city if API fails
+              const nearestCity = findNearestCity(latitude, longitude);
+              
+              const fallbackCity: CityAQI = nearestCity
+                ? {
+                    city: nearestCity.city + ' (Nearest)',
+                    lat: latitude,
+                    lon: longitude,
+                    aqi: nearestCity.aqi
+                  }
+                : {
+                    city: 'Your Location',
+                    lat: latitude,
+                    lon: longitude,
+                    aqi: 100
+                  };
+              
+              setUserLocation(fallbackCity);
+              setSelectedCity(fallbackCity);
+              setMapCenter([latitude, longitude]);
+            }
+            
+            setLocationLoading(false);
+          } catch (error) {
+            console.error('Error fetching AQI:', error);
+            
+            // Fallback to nearest demo city
+            const nearestCity = findNearestCity(latitude, longitude);
+            
+            const fallbackCity: CityAQI = nearestCity
+              ? {
+                  city: nearestCity.city + ' (Nearest)',
+                  lat: latitude,
+                  lon: longitude,
+                  aqi: nearestCity.aqi
+                }
+              : {
+                  city: 'Your Location',
+                  lat: latitude,
+                  lon: longitude,
+                  aqi: 100
+                };
+            
+            setUserLocation(fallbackCity);
+            setSelectedCity(fallbackCity);
+            setMapCenter([latitude, longitude]);
+            setLocationLoading(false);
+          }
+        },
+        (error) => {
+          console.log('Location access denied or unavailable');
+          // Show Delhi as default if location not available
+          setUserLocation(DEMO_CITIES[0]);
+          setSelectedCity(DEMO_CITIES[0]);
+          setMapCenter([DEMO_CITIES[0].lat, DEMO_CITIES[0].lon]);
+          setLocationLoading(false);
+        }
+      );
+    } else {
+      setLocationLoading(false);
     }
-    
-    setPollutionSources(sources);
-  }, [location, aqi]);
+  }, []);
 
-  const getAQIColor = (aqiVal: number) => {
-    if (aqiVal <= 50) return '#10B981';
-    if (aqiVal <= 100) return '#FBBF24';
-    if (aqiVal <= 150) return '#F97316';
-    if (aqiVal <= 200) return '#EF4444';
-    if (aqiVal <= 300) return '#8B5CF6';
+  const handleSearch = (city: string) => {
+    setSearchCity(city);
+    
+    if (city.trim() === '') {
+      // Reset to user's location if available
+      if (userLocation) {
+        setSelectedCity(userLocation);
+        setMapCenter([userLocation.lat, userLocation.lon]);
+        setFilteredCities(DEMO_CITIES);
+      } else {
+        setFilteredCities(DEMO_CITIES);
+        setMapCenter([20, 0]);
+        setSelectedCity(null);
+      }
+      return;
+    }
+
+    const found = DEMO_CITIES.find(c => 
+      c.city.toLowerCase().includes(city.toLowerCase())
+    );
+
+    if (found) {
+      setSelectedCity(found);
+      setFilteredCities([found]);
+      setMapCenter([found.lat, found.lon]);
+    } else {
+      setFilteredCities(
+        DEMO_CITIES.filter(c =>
+          c.city.toLowerCase().includes(city.toLowerCase())
+        )
+      );
+    }
+  };
+
+  const getAQIColor = (aqiValue: number) => {
+    if (aqiValue <= 50) return '#10B981';
+    if (aqiValue <= 100) return '#FBBF24';
+    if (aqiValue <= 150) return '#F97316';
+    if (aqiValue <= 200) return '#EF4444';
+    if (aqiValue <= 300) return '#8B5CF6';
     return '#7C2D12';
+  };
+
+  const getAQILabel = (aqiValue: number) => {
+    if (aqiValue <= 50) return 'Good';
+    if (aqiValue <= 100) return 'Moderate';
+    if (aqiValue <= 150) return 'Unhealthy for Sensitive Groups';
+    if (aqiValue <= 200) return 'Unhealthy';
+    if (aqiValue <= 300) return 'Very Unhealthy';
+    return 'Hazardous';
   };
 
   if (!isClient) {
     return (
-      <div className="bg-white rounded-2xl shadow p-6 h-96 animate-pulse">
+      <div className="bg-white rounded-2xl shadow p-6 h-[600px] animate-pulse">
         <div className="h-full bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl"></div>
       </div>
     );
   }
 
-  const L = require('leaflet');
-  
-  // Create custom icons
-  const userIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-    iconSize: [30, 46],
-    iconAnchor: [15, 46],
-    popupAnchor: [1, -34],
-    shadowSize: [46, 46]
-  });
-
-  const pollutionIcons = {
-    'red': new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    }),
-    'orange': new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    }),
-    'yellow': new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-yellow.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    }),
-    'purple': new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-violet.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    }),
-    'gray': new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    })
-  };
-
-  const totalContribution = pollutionSources.reduce((sum, source) => sum + source.contribution, 0);
-
   return (
-    <div className="h-[500px] rounded-2xl overflow-hidden border-2 border-gray-200 relative">
-      <MapContainer
-        center={[location.lat, location.lon]}
-        zoom={14}
-        style={{ height: '100%', width: '100%' }}
-        className="rounded-xl"
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
-        
-        {/* Pollution effect circle around user */}
-        <Circle
-          center={[location.lat, location.lon]}
-          radius={500}
-          pathOptions={{
-            fillColor: getAQIColor(aqi),
-            fillOpacity: 0.1,
-            color: getAQIColor(aqi),
-            opacity: 0.3,
-            weight: 2
-          }}
-        />
-        
-        {/* User Location */}
-        <Marker position={[location.lat, location.lon]} icon={userIcon}>
-          <Popup>
-            <div className="p-3 min-w-[200px]">
-              <div className="flex items-center mb-2">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-2">
-                  <span className="text-blue-600">📍</span>
-                </div>
-                <div>
-                  <h4 className="font-bold text-blue-700">Your Location</h4>
-                  <div className="text-sm text-gray-600">AQI: {aqi}</div>
-                </div>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-sm font-medium text-center ${
-                aqi > 200 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-              }`}>
-                {aqi > 200 ? '🚨 Legal Violation' : '✅ Within Limits'}
-              </div>
-            </div>
-          </Popup>
-        </Marker>
-        
-        {/* Pollution Sources */}
-        {pollutionSources.map((source) => (
-          <Marker 
-            key={source.id}
-            position={[source.lat, source.lon]} 
-            icon={pollutionIcons[source.color as keyof typeof pollutionIcons]}
-            eventHandlers={{
-              click: () => setSelectedSource(source.id),
+    <div className="w-full bg-white rounded-2xl shadow-lg overflow-hidden">
+      {/* Search Bar */}
+      <div className="p-6 bg-gradient-to-r from-blue-50 to-cyan-50 border-b border-gray-200">
+        <div className="flex gap-3 mb-4">
+          <div className="flex-1 relative">
+            <FiSearch className="absolute left-3 top-3 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder="Search for a city..."
+              value={searchCity}
+              onChange={(e) => setSearchCity(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+              handleSearch(searchCity);
+  }
+}}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black bg-white placeholder-gray-400"
+            />
+          </div>
+          <button
+            onClick={() => {
+              if (userLocation) {
+                handleSearch('');
+              }
             }}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-semibold"
+            title="Go to your location"
           >
-            <Popup>
-              <div className="p-3 min-w-[220px]">
-                <div className="flex items-center mb-3">
-                  <div className="text-2xl mr-3">{source.icon}</div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">{source.type}</h4>
-                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      source.impact === 'Very High' ? 'bg-red-100 text-red-800' :
-                      source.impact === 'High' ? 'bg-orange-100 text-orange-800' :
-                      source.impact === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {source.impact} Impact
-                    </div>
+            📍 My Location
+          </button>
+          <button
+            onClick={() => handleSearch('')}
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
+          >
+            Reset
+          </button>
+        </div>
+
+        {/* User Location Status */}
+        {locationLoading && (
+          <p className="text-sm text-blue-600 font-semibold">🔄 Requesting your location...</p>
+        )}
+        {userLocation && !searchCity && (
+          <p className="text-sm text-green-600 font-semibold">📍 Showing your location: {userLocation.city}</p>
+        )}
+
+        {filteredCities.length > 1 && (
+          <div className="mt-3 max-h-48 overflow-y-auto">
+            <p className="text-sm text-gray-600 mb-2">Found {filteredCities.length} cities:</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {filteredCities.map((city) => (
+                <button
+                  key={city.city}
+                  onClick={() => handleSearch(city.city)}
+                  className="p-2 bg-white border rounded-lg hover:bg-blue-50 transition text-sm"
+                  style={{ borderColor: getAQIColor(city.aqi) }}
+                >
+                  <div className="font-semibold" style={{ color: getAQIColor(city.aqi) }}>{city.city}</div>
+                  <div className="text-xs text-gray-600">AQI: {city.aqi}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Map and Details */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
+        {/* Map */}
+        <div className="md:col-span-2 h-[500px] rounded-xl overflow-hidden border-2 border-gray-200">
+          <MapContainer
+            center={mapCenter}
+            zoom={selectedCity ? 13 : 3}
+            style={{ height: '100%', width: '100%' }}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            
+            {/* User Location Marker */}
+            {userLocation && (
+              <Marker
+                key="user-location"
+                position={[userLocation.lat, userLocation.lon]}
+                icon={userIcon}
+              >
+                <Popup>
+                  <div className="p-3">
+                    <h3 className="font-bold text-lg">📍 {userLocation.city}</h3>
+                    <p className="text-sm my-2">
+                      AQI: <span style={{ color: getAQIColor(userLocation.aqi), fontWeight: 'bold' }}>{userLocation.aqi}</span>
+                    </p>
+                    <p className="text-xs text-gray-600">{getAQILabel(userLocation.aqi)}</p>
                   </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Intensity:</span>
-                    <span className="font-semibold">{source.intensity} µg/m³</span>
+                </Popup>
+              </Marker>
+            )}
+            
+            {/* Other Cities Markers */}
+            {filteredCities.map((city) => (
+              <Marker
+                key={city.city}
+                position={[city.lat, city.lon]}
+                icon={cityIcon}
+              >
+                <Popup>
+                  <div className="p-3">
+                    <h3 className="font-bold text-lg">{city.city}</h3>
+                    <p className="text-sm my-2">
+                      AQI: <span style={{ color: getAQIColor(city.aqi), fontWeight: 'bold' }}>{city.aqi}</span>
+                    </p>
+                    <p className="text-xs text-gray-600">{getAQILabel(city.aqi)}</p>
+                    <button
+                      onClick={() => window.location.href = `/complaintPage?city=${city.city}&aqi=${city.aqi}&lat=${city.lat}&lon=${city.lon}`}
+                      className="mt-2 w-full bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition"
+                    >
+                      File Complaint
+                    </button>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">AQI Contribution:</span>
-                    <span className="font-semibold text-red-600">{source.contribution} points</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Distance:</span>
-                    <span className="font-semibold">
-                      {Math.round(distance(location.lat, location.lon, source.lat, source.lon) * 1000)}m
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </div>
+
+        {/* City Details */}
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 h-[500px] overflow-y-auto">
+          <h3 className="text-lg font-bold mb-4 text-gray-800">
+            {selectedCity?.city === 'Your Location' ? '📍 Your Location' : '🏙️ City Details'}
+          </h3>
+          {selectedCity ? (
+            <div className="space-y-4">
+              <div className="bg-white rounded-lg p-4 border-l-4" style={{ borderColor: getAQIColor(selectedCity.aqi) }}>
+                <h4 className="text-xl font-bold" style={{ color: getAQIColor(selectedCity.aqi) }}>
+                  {selectedCity.city === 'Your Location' ? '📍 Your Current Location' : selectedCity.city}
+                </h4>
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-semibold">AQI Level:</span>
+                    <span 
+                      className="ml-2 font-bold text-lg" 
+                      style={{ color: getAQIColor(selectedCity.aqi) }}
+                    >
+                      {selectedCity.aqi}
                     </span>
-                  </div>
-                </div>
-                
-                <div className="mt-4 pt-3 border-t">
-                  <button 
-                    className="w-full px-3 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 transition"
-                    onClick={() => alert(`Complaint template for ${source.type} copied to clipboard`)}
-                  >
-                    Report This Source
-                  </button>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-semibold">Status:</span>
+                    <span className="ml-2 font-semibold" style={{ color: getAQIColor(selectedCity.aqi) }}>
+                      {getAQILabel(selectedCity.aqi)}
+                    </span>
+                  </p>
                 </div>
               </div>
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
-      
-      {/* Legend */}
-      <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-xl z-[1000] max-w-xs">
-        <div className="font-bold text-gray-800 mb-3">Pollution Source Map</div>
-        
-        <div className="space-y-3">
-          <div className="flex items-center">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-              <span className="text-blue-600">📍</span>
+
+              {/* AQI Explanation */}
+              <div className="bg-white rounded-lg p-3 border-l-4" style={{ borderColor: getAQIColor(selectedCity.aqi) }}>
+                <h5 className="font-semibold text-gray-800 mb-2">Why this AQI?</h5>
+                <p className="text-xs text-gray-700 leading-relaxed">
+                  {selectedCity.aqi <= 50
+                    ? '✅ Low traffic, good vegetation coverage, strong wind patterns dispersing pollutants.'
+                    : selectedCity.aqi <= 100
+                    ? '⚠️ Moderate industrial activity, some traffic congestion, seasonal weather patterns.'
+                    : selectedCity.aqi <= 150
+                    ? '⚠️ Growing traffic congestion, industrial zones nearby, limited vegetation.'
+                    : selectedCity.aqi <= 200
+                    ? '🔴 Heavy traffic, multiple industrial areas, coal-based power generation, stubble burning season.'
+                    : selectedCity.aqi <= 300
+                    ? '🔴 Major industrial centers, dense traffic, geographical valleys trapping pollutants, construction activities.'
+                    : '⛔ Extreme pollution from multiple sources: heavy traffic, unregulated industries, coal plants, crop burning, weather inversion.'}
+                </p>
+              </div>
+
+              {/* Main Pollution Sources */}
+              <div className="bg-white rounded-lg p-3 border-l-4" style={{ borderColor: getAQIColor(selectedCity.aqi) }}>
+                <h5 className="font-semibold text-gray-800 mb-2">Pollution Sources:</h5>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  {selectedCity.aqi > 150 && (
+                    <>
+                      <li>🚗 Vehicle emissions & traffic</li>
+                      <li>🏭 Industrial facilities</li>
+                      <li>🔥 Biomass burning</li>
+                    </>
+                  )}
+                  {selectedCity.aqi > 100 && selectedCity.aqi <= 150 && (
+                    <>
+                      <li>🚗 Moderate traffic congestion</li>
+                      <li>🏗️ Construction activities</li>
+                    </>
+                  )}
+                  {selectedCity.aqi <= 100 && (
+                    <li>✅ Clean air from wind & vegetation</li>
+                  )}
+                </ul>
+              </div>
+
+              {/* Action Button */}
+              <button
+                onClick={() => window.location.href = `/complaintPage?city=${selectedCity.city}&aqi=${selectedCity.aqi}&lat=${selectedCity.lat}&lon=${selectedCity.lon}`}
+                className="w-full bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition font-semibold"
+              >
+                📋 File Complaint
+              </button>
             </div>
-            <div>
-              <div className="font-medium">Your Location</div>
-              <div className="text-sm text-gray-600">AQI: {aqi}</div>
+          ) : locationLoading ? (
+            <div className="text-center text-blue-500 mt-10">
+              <p className="mb-4">⏳ Getting your location...</p>
+              <p className="text-sm">Please allow location access for best experience.</p>
             </div>
-          </div>
-          
-          <div className="border-t pt-3">
-            <div className="text-sm font-medium text-gray-700 mb-2">Pollution Sources:</div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
-                <span className="text-xs">High Impact</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
-                <span className="text-xs">Medium-High</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
-                <span className="text-xs">Medium</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
-                <span className="text-xs">Other Sources</span>
-              </div>
+          ) : (
+            <div className="text-center text-gray-500 mt-10">
+              <p className="mb-4">👆 Search or click a city on the map</p>
+              <p className="text-sm">Search for a specific city to see details and file complaints.</p>
             </div>
-          </div>
-          
-          <div className="border-t pt-3">
-            <div className="text-sm font-medium text-gray-700 mb-2">Pollution Analysis:</div>
-            <div className="text-sm text-gray-600">
-              <div className="flex justify-between mb-1">
-                <span>Total Sources:</span>
-                <span className="font-semibold">{pollutionSources.length}</span>
-              </div>
-              <div className="flex justify-between mb-1">
-                <span>Estimated Contribution:</span>
-                <span className="font-semibold text-red-600">{totalContribution} AQI points</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Your AQI:</span>
-                <span className="font-bold" style={{ color: getAQIColor(aqi) }}>{aqi}</span>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
-      
-      {/* Selected Source Info */}
-      {selectedSource !== null && (
-        <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-xl z-[1000] max-w-xs border-2 border-blue-200">
-          <div className="flex justify-between items-center mb-2">
-            <h4 className="font-bold text-gray-800">Source Details</h4>
-            <button 
-              onClick={() => setSelectedSource(null)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-          
-          {(() => {
-            const source = pollutionSources.find(s => s.id === selectedSource);
-            if (!source) return null;
-            
-            return (
-              <div>
-                <div className="flex items-center mb-3">
-                  <div className="text-2xl mr-3">{source.icon}</div>
-                  <div>
-                    <div className="font-bold">{source.type}</div>
-                    <div className="text-sm text-gray-600">{source.impact} Impact Level</div>
-                  </div>
-                </div>
-                
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Contributes:</span>
-                    <span className="font-semibold">{source.contribution} AQI points</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Distance:</span>
-                    <span className="font-semibold">
-                      {Math.round(distance(location.lat, location.lon, source.lat, source.lon) * 1000)} meters
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Pollution Level:</span>
-                    <span className="font-semibold">{source.intensity} µg/m³</span>
-                  </div>
-                </div>
-                
-                <button 
-                  className="w-full mt-4 px-4 py-2 bg-gradient-to-r from-red-600 to-orange-500 text-white rounded-lg font-medium hover:shadow-lg transition"
-                  onClick={() => {
-                    alert(`Complaint prepared for ${source.type}. Would you like to include this in your legal filing?`);
-                    setSelectedSource(null);
-                  }}
-                >
-                  Include in Complaint
-                </button>
-              </div>
-            );
-          })()}
-        </div>
-      )}
     </div>
   );
-}
-
-// Helper function to calculate distance between coordinates
-function distance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c; // Distance in km
 }

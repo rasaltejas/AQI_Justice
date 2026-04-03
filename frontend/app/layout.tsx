@@ -1,3 +1,4 @@
+/// <reference types="next" />
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
@@ -18,14 +19,18 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        <link 
+          rel="stylesheet" 
+          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossOrigin=""
+          crossOrigin="anonymous"
         />
         <link rel="icon" href="/favicon.ico" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#0ea5e9" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
-      <body className={`${inter.className} antialiased`}>
+      <body className={`${inter.className} antialiased overflow-x-hidden`}>
         {children}
       </body>
     </html>
