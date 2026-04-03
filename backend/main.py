@@ -23,7 +23,7 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-genai.configure(api_key="AIzaSyBRZeg0SNHq_xacQccVwzZjg65u2XDRYCI")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # CORS middleware
 app.add_middleware(
