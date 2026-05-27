@@ -131,3 +131,5 @@ Mapping
 │   ├── postcss.config.js
 │   └── tsconfig.json
 └── .vscode/
+<img width="829" height="450" alt="Screenshot 2026-05-27 204040" src="https://github.com/user-attachments/assets/b0bc838a-4e89-4ae5-8f03-6c28cceec875" />
+
