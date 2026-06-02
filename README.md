@@ -7,6 +7,7 @@ When air quality crosses legal limits, citizens can instantly file evidence-back
 
 [![Live Demo](https://img.shields.io/badge/demo-live-success)]()
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/rasaltejas/AQI_Justice)
+
 🚨 Why This Matters
 In cities like Delhi, AQI frequently exceeds hazardous and illegal levels, leading to:
 
