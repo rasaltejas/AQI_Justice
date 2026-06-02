@@ -5,8 +5,10 @@
 AQI_Justice is a civic-tech platform that transforms real-time air pollution data into actionable legal enforcement.
 When air quality crosses legal limits, citizens can instantly file evidence-backed complaints against responsible authorities — no legal knowledge required.
 
+
 [![Live Demo](https://img.shields.io/badge/demo-live-success)](https://streamable.com/f6smed)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/rasaltejas/AQI_Justice)
+
 
 🚨 Why This Matters
 In cities like Delhi, AQI frequently exceeds hazardous and illegal levels, leading to:
